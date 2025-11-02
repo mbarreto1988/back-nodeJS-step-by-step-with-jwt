@@ -3,16 +3,14 @@ import { getConnection } from '../infrastructure/db/mssql.js';
 import { env } from '../infrastructure/config/config.env.js';
 import authRoutes from '../interface/http/router/auth/auth.routes.js'
 import userRoutes from '../interface/http/router/users/user.routes.js'
-import { verifyToken } from '../interface/http/middlewares/auth/auth.middleware.js';
+import { AuthMiddleware } from '../interface/http/middlewares/auth/auth.middleware.js';
 
 export async function startServer() {
   const app = express();
   app.use(express.json());
 
   // Ruta base
-  app.get('/', (req, res) => {
-    res.send('🚀 Servidor corriendo correctamente');
-  });
+  app.get('/', (req, res) => res.send('🚀 Servidor corriendo correctamente') );
 
   // Ruta de prueba de conexión a la base
   app.get('/health', async (req, res) => {
@@ -25,13 +23,10 @@ export async function startServer() {
       res.status(500).json({ status: 'error', message: error.message });
     }
   });
+  
   app.use("/api/v1/auth", authRoutes);
-
-  app.use(verifyToken)
-
+  app.use(AuthMiddleware.verifyToken)
   app.use("/api/v1/users", userRoutes);
 
-  app.listen(env.PORT, () => {
-    console.log(`✅ Server corriendo en http://localhost:${env.PORT}`);
-  });
+  app.listen(env.PORT, () => console.log(`✅ Server corriendo en http://localhost:${env.PORT}`) );
 }

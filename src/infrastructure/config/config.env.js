@@ -20,8 +20,8 @@ const schema = z.object({
     // 🔐 JWT
   ACCESS_TOKEN_SECRET: z.string(),
   REFRESH_TOKEN_SECRET: z.string(),
-  ACCESS_TOKEN_EXPIRES_IN: z.string(),
-  REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number(),
+  ACCESS_TOKEN_EXPIRES_IN: z.string().transform((v) => v.trim().replace(/^"|"$/g, '')).default('1h'),
+  REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().default(7),
 
   // 🧂 Bcrypt
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(10)

@@ -1,100 +1,97 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { AuthRepository } from "../../infrastructure/repositories/auth/authRepository.js";
-import { env } from "../../infrastructure/config/config.env.js";
 
-export async function registerUseCase(data) {
-  // 1️⃣ Validar si el email ya existe
-  const existing = await AuthRepository.findByEmail(data.email);
-  if (existing) {
-    throw new Error("El email ya está registrado");
+export default class AuthUseCases {
+  constructor(authRepository, env) {
+    this.authRepository = authRepository;
+    this.env = env;
   }
 
-  // 2️⃣ Hashear contraseña
-  const salt = await bcrypt.genSalt(Number(env.BCRYPT_SALT_ROUNDS) || 10);
-  const passwordHash = await bcrypt.hash(data.password, salt);
+  async registerUser(data) {
+    const existing = await this.authRepository.findByEmail(data.email);
+    if (existing) throw new Error("El email ya está registrado");
 
-  // 3️⃣ Crear usuario
-  const createdUser = await AuthRepository.createUser({
-    ...data,
-    passwordHash
-  });
+    const salt = await bcrypt.genSalt(Number(this.env.BCRYPT_SALT_ROUNDS) || 10);
+    const passwordHash = await bcrypt.hash(data.password, salt);
 
-  if (!createdUser) {
-    throw new Error("Error al crear el usuario");
+    const createdUser = await this.authRepository.createUser({
+      ...data,
+      passwordHash,
+    });
+
+    if (!createdUser) throw new Error("Error al crear el usuario");
+
+    // 🧩 Normalizamos los valores de expiración
+    const accessExpire =
+      this.env.ACCESS_TOKEN_EXPIRES_IN?.toString().trim().replaceAll('"', "") ||
+      "1h";
+    const refreshExpireDays = Number(this.env.REFRESH_TOKEN_EXPIRES_DAYS) || 7;
+
+    // 🔐 Generar tokens
+    const accessToken = jwt.sign(
+      { id: createdUser.id, email: createdUser.email, role: createdUser.userRole },
+      this.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: accessExpire } // ej: "1h"
+    );
+
+    const refreshToken = jwt.sign(
+      { id: createdUser.id },
+      this.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: `${refreshExpireDays}d` } // ej: "7d"
+    );
+
+    return {
+      message: "Usuario registrado correctamente",
+      user: {
+        id: createdUser.id,
+        firstName: createdUser.firstName,
+        lastName: createdUser.lastName,
+        userName: createdUser.userName,
+        email: createdUser.email,
+        userRole: createdUser.userRole,
+        createdAt: createdUser.createdAt,
+      },
+      tokens: { accessToken, refreshToken },
+    };
   }
 
-  // 4️⃣ Generar tokens (igual que en login)
-  const accessToken = jwt.sign(
-    { id: createdUser.id, email: createdUser.email, role: createdUser.userRole },
-    env.ACCESS_TOKEN_SECRET,
-    { expiresIn: env.ACCESS_TOKEN_EXPIRES_IN }
-  );
+  async loginUser(data) {
+    const user = await this.authRepository.findByEmail(data.email);
+    if (!user) throw new Error("Credenciales inválidas");
 
-  const refreshToken = jwt.sign(
-    { id: createdUser.id },
-    env.REFRESH_TOKEN_SECRET,
-    { expiresIn: `${env.REFRESH_TOKEN_EXPIRES_DAYS}d` }
-  );
+    const validPassword = await bcrypt.compare(data.password, user.passwordHash);
+    if (!validPassword) throw new Error("Credenciales inválidas");
 
-  // 5️⃣ Respuesta con usuario + tokens
-  return {
-    message: "Usuario registrado correctamente",
-    user: {
-      id: createdUser.id,
-      firstName: createdUser.firstName,
-      lastName: createdUser.lastName,
-      userName: createdUser.userName,
-      email: createdUser.email,
-      userRole: createdUser.userRole,
-      createdAt: createdUser.createdAt
-    },
-    tokens: {
-      accessToken,
-      refreshToken
-    }
-  };
-}
+    // 🧩 Normalizamos expiraciones
+    const accessExpire =
+      this.env.ACCESS_TOKEN_EXPIRES_IN?.toString().trim().replaceAll('"', "") ||
+      "1h";
+    const refreshExpireDays = Number(this.env.REFRESH_TOKEN_EXPIRES_DAYS) || 7;
 
-export async function loginUseCase(data) {
-  const user = await AuthRepository.findByEmail(data.email);
+    // 🔐 Generar tokens
+    const accessToken = jwt.sign(
+      { id: user.id, email: user.email, role: user.userRole },
+      this.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: accessExpire }
+    );
 
-  if (!user) {
-    throw new Error("Credenciales inválidas");
+    const refreshToken = jwt.sign(
+      { id: user.id },
+      this.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: `${refreshExpireDays}d` }
+    );
+
+    return {
+      message: "Login exitoso",
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        userName: user.userName,
+        email: user.email,
+        userRole: user.userRole,
+      },
+      tokens: { accessToken, refreshToken },
+    };
   }
-
-  const validPassword = await bcrypt.compare(data.password, user.passwordHash);
-  if (!validPassword) {
-    throw new Error("Credenciales inválidas");
-  }
-
-  // 🪪 Generar tokens JWT
-  const accessToken = jwt.sign(
-    { id: user.id, email: user.email, role: user.userRole },
-    env.ACCESS_TOKEN_SECRET,
-    { expiresIn: env.ACCESS_TOKEN_EXPIRES_IN }
-  );
-
-  const refreshToken = jwt.sign(
-    { id: user.id },
-    env.REFRESH_TOKEN_SECRET,
-    { expiresIn: `${env.REFRESH_TOKEN_EXPIRES_DAYS}d` }
-  );
-
-  // 🧾 Devolver usuario sin password + tokens
-  return {
-    message: "Login exitoso",
-    user: {
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      userName: user.userName,
-      email: user.email,
-      userRole: user.userRole
-    },
-    tokens: {
-      accessToken,
-      refreshToken
-    }
-  };
 }
